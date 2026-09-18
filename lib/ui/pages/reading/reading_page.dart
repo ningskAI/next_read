@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:i_reader/config/app_config.dart';
 import 'package:i_reader/data/models/book.dart';
 import 'package:i_reader/data/models/reading_theme.dart';
+import 'package:i_reader/providers/reading_theme_provider.dart';
 import 'package:i_reader/providers/service_registry.dart';
 import 'package:i_reader/ui/pages/reading/widgets/epub_player.dart';
+import 'package:i_reader/ui/pages/reading/widgets/reading_theme_panel.dart';
 import 'package:i_reader/ui/pages/reading/widgets/toc_widget.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -78,7 +80,11 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
     }
   }
 
-  Future<void> onLoadEnd() async {}
+  Future<void> onLoadEnd() async {
+    // 加载完后，应用当前主题
+    final theme = ref.read(currentReadingThemeProvider);
+    epubPlayerKey.currentState?.changeTheme(theme);
+  }
 
   void updateState() {
     if (mounted) {}
@@ -86,9 +92,21 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 监听主题变化，同步给 epub player
+    ref.listen<ReadingTheme>(currentReadingThemeProvider, (prev, next) {
+      if (prev?.id != next.id) {
+        epubPlayerKey.currentState?.changeTheme(next);
+      }
+    });
+
+    final currentTheme = ref.watch(currentReadingThemeProvider);
+
     return Scaffold(
       body: Stack(
         children: [
+          // 0. 底层背景（颜色或图片）
+          _ReadingBackground(theme: currentTheme),
+
           // 1. 底层阅读器
           EpubPlayer(
             key: epubPlayerKey,
@@ -110,6 +128,7 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
                 // 根据 _isAppBarVisible 决定是否显示 AppBar
                 appBar: _isAppBarVisible
                     ? AppBar(
+                        backgroundColor: Colors.transparent,
                         title: Text(
                           widget.book.title,
                           style: const TextStyle(fontSize: 16),
@@ -160,8 +179,9 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
   }
 
   Widget _buildBottomBar() {
+    final isNight = ref.watch(isNightModeProvider);
     return Container(
-      color: Theme.of(context).bottomSheetTheme.backgroundColor ?? Colors.white,
+      color: isNight ? const Color(0xFF1C1C1E) : Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -170,6 +190,7 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
             children: [
               _buildBottomAction(
                 icon: Icons.menu_outlined,
+                label: '目录',
                 onPressed: () {
                   // 点击菜单：先隐藏 AppBar，再弹出目录
                   setState(() => _isAppBarVisible = false);
@@ -198,18 +219,32 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
               ),
               _buildBottomAction(
                 icon: Icons.bookmark_outline,
+                label: '书签',
                 onPressed: () => setState(() => _isAppBarVisible = false),
               ),
               _buildBottomAction(
-                icon: Icons.data_usage,
-                onPressed: () => setState(() => _isAppBarVisible = false),
+                icon: Icons.nightlight_round,
+                label: '昼夜',
+                onPressed: () {
+                  ref.read(isNightModeProvider.notifier).toggle();
+                  final isNight = ref.read(isNightModeProvider);
+                  final notifier = ref.read(readingThemesProvider.notifier);
+                  final list = isNight ? notifier.nightThemes : notifier.dayThemes;
+                  final theme = list.first;
+                  ref.read(currentReadingThemeProvider.notifier).setTheme(theme);
+                },
               ),
               _buildBottomAction(
                 icon: Icons.color_lens,
-                onPressed: () => setState(() => _isAppBarVisible = false),
+                label: '背景',
+                onPressed: () {
+                  setState(() => _isAppBarVisible = false);
+                  _showThemePanel();
+                },
               ),
               _buildBottomAction(
                 icon: Icons.text_format,
+                label: '字体',
                 onPressed: () => setState(() => _isAppBarVisible = false),
               ),
             ],
@@ -222,8 +257,75 @@ class ReadingPageState extends ConsumerState<ReadingPage> {
 
   Widget _buildBottomAction({
     required IconData icon,
+    required String label,
     required VoidCallback onPressed,
   }) {
-    return IconButton(icon: Icon(icon), onPressed: onPressed);
+    final isNight = ref.watch(isNightModeProvider);
+    return InkWell(
+      onTap: onPressed,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isNight ? Colors.grey[300] : Colors.grey[800],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: isNight ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showThemePanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Consumer(
+          builder: (context, ref, _) {
+            return ReadingThemePanel(
+              onThemeSelected: (theme) {
+                epubPlayerKey.currentState?.changeTheme(theme);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// 底层阅读背景，支持颜色和图片
+class _ReadingBackground extends ConsumerWidget {
+  final ReadingTheme theme;
+
+  const _ReadingBackground({required this.theme});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (theme.backgroundImagePath.isNotEmpty) {
+      return Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage(theme.backgroundImagePath),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+    return Container(
+      color: Color(int.parse('0x${theme.backgroundColor}')),
+    );
   }
 }

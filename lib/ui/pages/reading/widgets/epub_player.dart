@@ -133,8 +133,9 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
     textColor = readTheme.textColor;
     backgroundColor = readTheme.backgroundColor;
 
-    String bc = ColorUtils.convertDartColorToJs(Colors.transparent.toString());
-    String tc = ColorUtils.convertDartColorToJs(readTheme.textColor);
+    // 让 webview 内部背景透明，由 Flutter 底层 Container 显示真实背景
+    const bc = '00000000';
+    final tc = ColorUtils.convertDartColorToJs(readTheme.textColor);
 
     webViewController.evaluateJavascript(
       source:
@@ -852,19 +853,27 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
     String initialCfi = widget.cfi ?? widget.book.lastReadPosition;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          InAppWebView(
-            initialUrlRequest: URLRequest(
-              url: WebUri(generateUrl(url, initialCfi)),
-            ),
-            onLoadStop: (controller, uri) => onWebViewCreated(controller),
-            contextMenu: contextMenu, // 确保应用自定义的 ContextMenu 配置以隐藏系统菜单
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<OneSequenceGestureRecognizer>(
-                () => EagerGestureRecognizer(),
+          Container(
+            color: Colors.transparent,
+            child: InAppWebView(
+              initialUrlRequest: URLRequest(
+                url: WebUri(generateUrl(url, initialCfi)),
               ),
-            },
+              initialSettings: InAppWebViewSettings(
+                transparentBackground: true,
+                backgroundColor: 0x00000000,
+              ),
+              onLoadStop: (controller, uri) => onWebViewCreated(controller),
+              contextMenu: contextMenu, // 确保应用自定义的 ContextMenu 配置以隐藏系统菜单
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
+            ),
           ),
           readingInfoWidget(),
         ],
